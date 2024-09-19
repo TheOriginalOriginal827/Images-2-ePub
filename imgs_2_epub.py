@@ -1,10 +1,44 @@
 import os
+import time
 import shutil
+import sys
+import itertools
 from PIL import Image
-from datetime import datetime, timezone
+from datetime import datetime
 import uuid
 import zipfile
+import threading
 
+processDone = False
+loadmsg=""
+donemsg=""
+
+def loadPrint():
+    for frame in itertools.cycle(["...", "   ", ".  ", ".. "]):
+        if processDone:
+            sys.stdout.write(("\r"+loadmsg+"..."))
+            sys.stdout.flush()
+            break
+        sys.stdout.write(("\r"+loadmsg+frame))
+        sys.stdout.flush()
+        time.sleep(0.1)
+    sys.stdout.write("\n"+donemsg+"\n")
+        
+def startLoadPrint(msg):
+    global processDone
+    global loadmsg
+    processDone = False
+    loadmsg = msg
+    anim = threading.Thread(target=loadPrint)
+    anim.start()
+    
+def endLoadPrint(msg):
+    global processDone
+    global donemsg
+    donemsg = msg
+    processDone = True
+    time.sleep(0.2)
+        
 ### PREP
 
 debug = False
@@ -15,158 +49,112 @@ settings={}
 
 while True:
     print(f"\nCurrent Path - {os.path.dirname(os.path.realpath(__file__))}")
-
+    
     #GET EPUB PATH
     while True:
         settings.update({"epub_path": input("\nWhere do you want the file to be created? (Leave blank for current path): ")})
+        if debug == True: print("EPUB PATH IN: "+settings["epub_path"])
         if(settings["epub_path"] == ""):
             settings.update({"epub_path": os.path.dirname(os.path.realpath(__file__))})
             break
         elif (os.path.exists(settings["epub_path"]) == False):
-            if debug is True: print("INPUT FAIL "+settings["epub_path"])
             print("\nPath is invalid!")
-        else:
-            break
-
-    if debug is True: print("INPUT SUCCEED "+settings["epub_path"])
+        else: break
+        
+    if debug == True: print("EPUB PATH: "+settings["epub_path"])
     
     ## GET IMAGE PATH
-
     while True:
-        settings.update({"img_path": input("\nWhere are your images stored? (Leave blank for current path): ")})
-        if(settings["img_path"] == ""):
-            settings.update({"img_path": os.path.dirname(os.path.realpath(__file__))})
-            break
-        elif (os.path.exists(settings["img_path"]) == False):
-            if debug is True: print("INPUT FAIL "+settings["img_path"])
-            print("\nPath is invalid!")
+        while True:
+            settings.update({"img_path": input("\nWhere are your images stored? (Leave blank for current path): ")})
+            if debug == True: print("IMAGE PATH IN: "+settings["img_path"])
+            if(settings["img_path"] == ""):
+                settings.update({"img_path": os.path.dirname(os.path.realpath(__file__))})
+                break
+            elif (os.path.exists(settings["img_path"]) == False):
+                print("\nPath is invalid!")
+            else:break
+
+        if debug == True: print("IMAGE PATH SAVE: "+settings["img_path"])
+
+        ## CHECK FOR IMAGES
+        
+        print("\nStarting search\n")
+        
+        startLoadPrint("Searching for images")
+        
+        if debug == True: print("FILES IN PATH: "+str(os.listdir(settings["img_path"])))
+        
+        imgs = [f for f in os.listdir(settings["img_path"]) if (f[:-4].replace(".", "").replace("img_", "")).isdigit()]
+
+        if len(imgs) == 0:
+            endLoadPrint("\nCould not find any images! Make sure your images are in the image path.")
+            
         else:
+            endLoadPrint(f"\n{str(len(imgs))} images found!")
+            if debug == True: print("UNSORTED IMAGES: "+str(imgs))
+            imgs.sort(key=lambda f: int(f[:-4].replace(".", "").replace("img_", "")))
+            if debug == True: print("SORTED IMAGES: "+str(imgs))
+            print(f"\nPaths set to:\nFile Path - {settings['epub_path']}!\nImage Path - {settings['img_path']}!")
             break
-
-    if debug is True: print("INPUT SUCCEED "+settings["img_path"])
-
-    ## DETECT IMAGES
-
-    print("\nSearching for images...")
-
-    if debug is True: print("FOUND TOTAL FILES "+str(os.listdir(settings["img_path"])))
-    
-    imgs = [f for f in os.listdir(settings["img_path"]) if (f[:-4].replace(".", "").replace("img_", "")).isdigit()]
-
-    if len(imgs) == 0:
-        print("\nCould not find any images! Make sure your images are in the image path.")
-        quit()
-
-    else:
-        if debug is True: print("IMGS "+str(imgs))
-
-        imgs.sort(key=lambda f: int(f[:-4].replace(".", "").replace("img_", "")))
-        
-        if debug is True: print("IMGS SORTED: "+str(imgs))
-        
-        print("\n"+str(len(imgs)) + " images found!")
-    
-    print(f"\nPaths set to:\nFile Path - {settings['epub_path']}\nImage Path - {settings['img_path']}")
     break
 
 ## METADATA
 
-while True:
-    settings.update({"filename": (input("\nEPUB File Name (Ex: 'My_Book', 'scott_pilgrim_1.epub'): ").replace(".epub", "")).replace("'", "")})
-    if settings["filename"] != "":
-        break
-    else:
-        print("\File name cannot be blank. Please provide a file name.")
+def promptMeta(tochange, question, good, bad, invalidMsg):
+    while True:
+        response = input(question)
+        if debug == True: print(f"META {tochange} RESPONSE {response}")
+        if (bad != False) and (response in bad or response == bad):print(invalidMsg)
+        elif (good != False) and (response not in good):print(invalidMsg)
+        else: 
+            settings.update({tochange:response})
+            if debug == True: print(f"META {tochange} SET VALID {response}")
+            break
 
-if debug is True: print("FILENAME "+ settings["filename"])
 
-while True:
-    settings.update({"title": input("\nWhat's the title of your book (Ex: Scott Pilgrim, Vol. 1: Precious Little Life): ")})
-    if settings["title"] != "":
-        break
-    else:
-        print("\nTitle cannot be blank. Please provide a title.")
+promptMeta("filename", "\nEPUB File Name (Ex: 'My_Book', 'scott_pilgrim_1.epub'): ", False, ("", "/", "<", ">", ":", "\\", "|", "?", "*"), "\nFile name is blank or contains invalid characters. Please provide a file name.")
 
-if debug is True: print("TITLE "+settings["title"])
+promptMeta("title", "\nWhat's the title of your book (Ex: Scott Pilgrim, Vol. 1: Precious Little Life): ", False, "", "\nTitle cannot be blank. Please provide a title.")
 
-settings.update({"lang": input("\nWhat language is your book in? MUST be well-formed language tag.\n(Look here for tags: https://r12a.github.io/app-subtags/) (Leave blank for default, 'en-US'): ")})
-if settings["lang"] == "":
-    settings.update({"lang":"en-US"})
+promptMeta("lang", "\nWhat language is your book in? MUST be well-formed language tag. (Look here for tags: https://r12a.github.io/app-subtags/)\n(Leave blank for default, 'en-US'): ", False, False, "\nInvalid language tag!")
+if settings["lang"] == "": settings.update({"lang":"en-US"})
 
-if debug is True: print("INPUT SUCCEED "+settings["lang"])
+promptMeta("dateMod", "\nWhen is the 'last modified' date? (Time must be in UTC format!) (Leave blank for current time): ", False, False, "\nInvalid date modified!")
+if settings["dateMod"] == "": settings.update({"dateMod": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")})
 
-settings.update({"dateMod" : input("\nWhen is the 'last modified' date? (Time must be in UTC format!) (Leave blank for current time): ")})
-if settings["dateMod"] == "":
-    settings.update({"dateMod": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")})
-
-if debug is True: print("INPUT SUCCEED "+str(settings["dateMod"]))
-
-settings.update({"identifier": input("\nPlease provide a unique identifier for your EPUB (Ex: UUID, DOI, ISBN)\nFor custom identifiers, include the type at the beginning of the identifier (EX: isbn:#####) (Leave blank for random UUID): ")})
-if settings["identifier"] == "":
-    settings.update({"identifier": "uuid:"+ str(uuid.uuid4())})
-
-if debug is True: print("INPUT SUCCEED "+str(settings["identifier"]))
+promptMeta("identifier", "\nPlease provide a unique identifier for your EPUB (Ex: UUID, DOI, ISBN)\nFor custom identifiers, include the type at the beginning of the identifier (EX: isbn:#####)\n(Leave blank for random UUID): ", False, False, "\nInvalid Identifier!")
+if settings["identifier"] == "": settings.update({"identifier": "uuid:"+ str(uuid.uuid4())})
 
 while True:
-    settings.update({"pageAfterCover": input("\nAfter the cover page, should it continue with Page 1, or Page 2? (Answer with 1/2): ")})
-    if settings["pageAfterCover"] == "1" or settings["pageAfterCover"] == "2":
-        break
-    else:
-        print("Invalid Input!")
+    promptMeta("pageStart", "\nOn what image does your book start couting pages? (Ex: Image 2 = Page 1, Image 15 = Page 13): ", False, False, "\nInvalid page!")
+    if settings["pageStart"].isdigit() == True: break
+    else: print("\nInvalid Page!")
 
-if debug is True: print("INPUT SUCCEED "+settings["pageAfterCover"])
+promptMeta("legacy", "\nWould you like to enable legacy compatability? (May be needed for old ePub readers) (y/n): ", ("y", "n"), False, "\nInvalid choice! Please type 'y' or 'n'.")
 
-while True:
-    settings.update({"legacy": input("\nWould you like to enable legacy compatability? (May be needed for old ePub readers) (y/n): ")})
-    if settings["legacy"] != "y" and settings["legacy"] != "n":
-        print("Invalid Input!")
-    else:
-        break
 
-if debug is True: print("INPUT SUCCEED "+settings["legacy"])
-
-while True:
-    settings.update({"toc": input("\nWould you like a table of contents? (y/n): ")})
-    if settings["toc"] != "y" and settings["toc"] != "n":
-        print("Invalid Input!")
-    else:
-        break
-
-if debug is True: print("INPUT SUCCEED "+settings["toc"])
+promptMeta("toc", "\nWould you like a table of contents? (y/n): ", ("y", "n"), False, "\nInvalid choice! Please type 'y' or 'n'.")
 
 settings.update({"chapters": []})
 if settings["toc"] == "y":
+    print("\n")
     while True:
         while True:
-            chapter = input("\nWhat page does your (next) chapter start? (Leave blank to end): ")
+            chapter = input("What page does your (next) chapter start? (Leave blank to end): ")
+            if debug == True: print("CHAPTER: "+chapter)
             if chapter != "":
                 if chapter.isdigit():
                     settings["chapters"].append(chapter)
-                    if debug is True: print("INPUT SUCCEED "+chapter)
-                else:
-                    print("Invalid page!")
-            else:
-                break
+                else: 
+                    print("\nNot a page!")
+            else: break
         break
-    if debug is True: print("INPUTS SUCCEED "+str(settings["chapters"]))
+    if debug == True: print("CHAPTERS: "+str(settings["chapters"]))
 
-while True:
-    settings.update({"dir": input("\nWhich way should your ePub be read? (Left-to-right for english and similar languages) (ltr/rtl): ")})
-    if settings["dir"] != "ltr" and settings["dir"] != "rtl":
-        print("Invalid Input!")
-    else:
-        break
-    
-if debug is True: print("INPUT SUCCEED "+settings["dir"])
+promptMeta("dir", "\nWhich way should your ePub be read? (Left-to-right for english and similar languages) (ltr/rtl): ", ("ltr", "rtl"), False, "Not a direction! Please type 'ltr' or 'rtl'")
 
-while True:
-    settings.update({"optionalMeta": input("\nWould you like to include additional metadata, such as authors?\n(It is heavily reccommended to add this metadata in in a seperate app like Calibre or Sigil instead) (y/n): ")})
-    if settings["optionalMeta"] != "y" and settings["optionalMeta"] != "n":
-        print("Invalid Input!")
-    else:
-        break
-
-if debug is True: print("INPUT SUCCEED "+settings["optionalMeta"])
+promptMeta("optionalMeta", "\nWould you like to include additional metadata, such as authors?\n(It is heavily reccommended to add this metadata in in a seperate app like Calibre or Sigil instead)\n(y/n): ", ("y", "n"), False, "Please put 'y' or 'n'.")
 
 settings.update({"titleSort": ""})
 settings.update({"authors":[]})
@@ -180,501 +168,256 @@ settings.update({"publisher":""})
 settings.update({"desc":""})
 
 if settings["optionalMeta"] == "y":
-    settings.update({"tilteSort": input("\nHow should your title be sorted? (Ex: The Lord of the Rings -> Lord of the Rings, The) (Leave blank to skip): ")})
+    settings.update({"titleSort": input("\nHow should your title be sorted? (Ex: The Lord of the Rings -> Lord of the Rings, The)\n(Leave blank to skip): ")})
+    if debug == True: print("TITLE SORT: "+settings["titleSort"])
     while True:
-        auth = input("\nWho is an author of the book? (Person/Company that played a primary role in the creation of the book) (Leave blank to skip/end): ")
-        if auth == "":
-            break
-        else:
-            settings["authors"].append(auth)
+        auth = input("\nWho is an author of the book? (Person/Company that played a primary role in the creation of the book)\n(Leave blank to skip/end): ")
+        if debug == True: print("AUTH: "+auth)
+        if auth == "": break
+        else: settings["authors"].append(auth)
+    if debug == True: print("AUTHOR LIST: "+settings["authors"])
     if len(settings["authors"]) > 0:
         for i in range(len(settings["authors"])):
             while True:
-                settings["authorSort"].append(input("\nFor each author, provide a sort name (Ex: Brian Lee O'Malley -> O'Malley, Bryan Lee)\nCurrent Author is "+ str(settings["authors"][i]) + ": "))
-                if settings["authorSort"] == "":
-                    print("\nPlease provide an author sort.")
-                else:
-                    break
+                settings["authorSort"].append(input(f"\nFor each author, provide a sort name\n(Ex: Brian Lee O'Malley -> O'Malley, Bryan Lee)\nCurrent Author is {str(settings['authors'][i])}: "))
+                if debug == True: print("AUTHOR SORT: "+settings["authorSort"])
+                if settings["authorSort"] == "": print("\nPlease provide an author sort.")
+                else: break
     if len(settings["authors"]) > 0:
         for i in range(len(settings["authors"])):
             while True:
-                altScript = input("\nFor each author, you may provide an alt script (Ex: Hirohiko Araki, en -> 荒木 飛呂彦, jp) (Leave blank to skip author): ").replace(" ", "")
-                if "," in altScript != True:
-                    print("Invalid Alt-Script!")
+                altScript = input("\nFor each author, you may provide an alt script (Ex: Hirohiko Araki, en -> 荒木 飛呂彦, jp)\n(Leave blank to skip author): ").replace(" ", "")
+                if debug == True: print("ALT SCRIPT: "+altScript)
+                if "," not in altScript: print("\nInvalid Alt-Script!")
                 else:
                     settings["authorAltScript"].append(altScript)
                     break
-            
+            if debug == True: print("ALT SCRIPTS: "+settings["authorAltScripts"])
     while True:
-        contributor = input("\nIs there a contributor of the book? (Person/Company that played a secondary role in book creation) (Leave blank to skip/end): ")
-        if contributor == "":
-            break
-        else:
-            settings["contributors"].append(contributor)
+        contributor = input("\nIs there a contributor of the book? (Person/Company that played a secondary role in book creation)\n(Leave blank to skip/end): ")
+        if debug == True: print("CONTRIBUTOR: "+settings["contributor"])
+        if contributor == "": break
+        else: settings["contributors"].append(contributor)
+    if debug == True: print("CONTRIBUTORS: "+settings["contributors"])
     if len(settings["contributors"]) > 0:
         for i in range(len(settings["contributors"])):
             while True:
-                settings["contributorSort"].append(input("\nFor each contributor, provide a sort name (Ex: Brian Lee O'Malley -> O'Malley, Bryan Lee)\nCurrent Contributor is "+ str(settings["contributors"][i]) + ": "))
-                if settings["contributorSort"] == "":
-                    print("\nPlease provide an contributor sort.")
-                else:
-                    break
+                settings["contributorSort"].append(input(f"\nFor each contributor, provide a sort name\n(Ex: Brian Lee O'Malley -> O'Malley, Bryan Lee)\nCurrent Contributor is {settings['contributors'][i]}: "))
+                if debug == True: print("CONTRIBUTOR SORT: "+settings["contributorSort"])
+                if settings["contributorSort"] == "": print("\nPlease provide an contributor sort.")
+                else: break
     if len(settings["contributors"]) > 0:
         for i in range(len(settings["contributors"])):
             while True:
-                altScript = input("\nFor each contributor, you may provide an alt script (Ex: Hirohiko Araki, en -> 荒木 飛呂彦, jp) (Leave blank to skip contributor): ").replace(" ", "")
-                if "," in altScript != True:
-                    print("Invalid Alt-Script!")
+                altScript = input("\nFor each contributor, you may provide an alt script (Ex: Hirohiko Araki, en -> 荒木 飛呂彦, jp)\n(Leave blank to skip contributor): ").replace(" ", "")
+                if debug == True: print("CONTRIBUTOR ALT: "+altScript)
+                if "," in altScript != True: print("\nInvalid Alt-Script!")
                 else:
                     settings["contributorAltScript"].append(altScript)
                     break
+            if debug == True: print("CONTR. ALT SCTIPTS: "+settings["contributorAltScripts"])
             
-    settings.update({"pubdate": input("\nWhat was the publication date of your book? (Please write in UTC format) (Leave blank to skip): ")})
-
-    settings.update({"publisher": input("\nDoes your book have a publisher? (Leave blank to skip): ")})   
+    settings.update({"publisher": input("\nDoes your book have a publisher? (Leave blank to skip): ")})
+    if debug == True: print("PUBLISHER: "+settings["publisher"])
+            
+    settings.update({"pubdate": input("\nWhen was the publication date of your book? (Please write in UTC format)\n(Leave blank to skip): ")})
+    if debug == True: print("PUBLICATION DATE: "+settings["pubdate"])
     
     settings.update({"desc": input("\nIf you would like to add a description, write it here (Leave blank to skip): ")})
+    if debug == True: print("DESCRIPTION: "+settings["desc"])
     
 ### CREATE DIRECTORIES
-print("Creating Directories")
+print("\nMetadata gathered, starting filemaking proccess\n")
+startLoadPrint("Creating directories")
 
 ## MAIN DIRECTORY
 
 def create_directory(path):
+    global donemsg
+    global processDone
     if not os.path.exists(path):
         try:
             os.makedirs(path)
-            print(f"\nDirectory {path} created!")
-        except OSError as error:
-            print(f"\nDirectory {path} can't be created. Reason: {error}")
+            if debug == True: print(f"DIR {path}")
+        except Exception as error:
+            endLoadPrint(f"\nDirectory {path} can't be created. Reason: {error}")
             quit()
     else:
-        print(f"\n{path} already exists!")
+        if debug == True: print(f"{path} PRESENT")
+
+def create_file(path, write):
+    global donemsg
+    global processDone
+    try:
+        with open((path), "a") as file:
+            file.write(write)
+        if debug == True: print (f"FILE {path}")
+    except Exception as error:
+        endLoadPrint(f"\File {path} can't be created. Reason: {error}")
+        quit()
 
 create_directory(os.path.join(settings["epub_path"], settings["filename"]))
 
-## MIMETYPE
-
-try:
-    with open(os.path.join(settings["epub_path"], settings["filename"],"mimetype"), "a") as mimetype:
-        mimetype.write("application/epub+zip")
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\mimetype created!")
-except OSError as error:
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\mimetype can't be created. Reason: {error}")
-    quit()
+create_file(os.path.join(settings["epub_path"], settings["filename"],"mimetype"), "application/epub+zip")
 
 create_directory(os.path.join(settings["epub_path"], settings["filename"], "META-INF"))
 create_directory(os.path.join(settings["epub_path"], settings["filename"], "OEBPS"))
 create_directory(os.path.join(settings["epub_path"], settings["filename"], "OEBPS", "images"))
 
-print("Directories Created!")
+endLoadPrint("\nDirectories Created!\n")
 
-### COPY IMAGES/
+### COPY IMAGES
 
-print("Copying Images")
+startLoadPrint("Copying images")
 
 for i in range(len(imgs)):
     shutil.copy(os.path.join(settings["img_path"],imgs[i]), os.path.join(settings["epub_path"], settings["filename"],"OEBPS","images"))
-    print(f"\nImage `{imgs[i]}` copied.")
+    if debug==True:print(f"COPY {imgs[i]} ")
 
-print("Images Copied!")
+endLoadPrint("\nImages Copied!\n")
 
 ### FILES
 
 ## XHTML FILES + DYNAMIC CODE FOR OTHERS
 
-stylesheet = """body {background-color: #fff;}\n\n"""
-navigation = f"""<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head>
-    <title>{settings["title"]}</title>
-    <link rel="stylesheet" href="stylesheet.css" type="text/css"/>
-    <meta charset="utf-8"/>
-</head>
-    <body>
-        <nav xmlns:epub="http://www.idpf.org/2007/ops" role="doc-toc" epub:type="toc" id="toc">
-            <ol>"""
+stylesheet = "body {background-color: #fff;}\n\n"
+navigation = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n<head>\n    <title>{settings['title']}</title>\n    <link rel=\"stylesheet\" href=\"stylesheet.css\" type=\"text/css\"/>\n    <meta charset=\"utf-8\"/>\n</head>\n<body>\n    <nav xmlns:epub=\"http://www.idpf.org/2007/ops\" role=\"doc-toc\" epub:type=\"toc\" id=\"toc\">\n        <ol>"
 pagelist = []
-manifestXHTML = """"""
-spine = """"""
-print("Creating XHTML Files...")
+manifestXHTML = ""
+spine = ""
+startLoadPrint("Creating files")
 
 for i in range(len(imgs)):
-    print(imgs[i])
-    if imgs[i].endswith((".jpg", ".jpeg", ".jpe", ".jif", ".jfif", ".jfi")):
-        mediatype = "jpeg"
-    elif imgs[i].endswith((".png")):
-        mediatype = "png"
-    elif imgs[i].endswith((".gif")):
-        mediatype = "gif"
-    elif imgs[i].endswith(("webp")):
-        mediatype = "webp"
+    if imgs[i].endswith((".jpg", ".jpeg", ".jpe", ".jif", ".jfif", ".jfi")): mediatype = "jpeg"
+    elif imgs[i].endswith((".png")): mediatype = "png"
+    elif imgs[i].endswith((".gif")): mediatype = "gif"
+    elif imgs[i].endswith(("webp")): mediatype = "webp"
     page_num = i
     width, height = Image.open(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","images",imgs[i])).size
-    if settings["pageAfterCover"] == "1":
-        page_num -= 1
+    if settings["pageStart"] != 2: page_num -= int(settings["pageStart"])-1
     if i == 0:
         title = "Cover"
         file_name = "cover.xhtml"
-        xhtml_code = f"""<body class="body_cover">
-    <div class="image_cover">
-        <img src="images/{imgs[i]}" alt="Cover)"/>
-    </div>
-</body>"""
-        stylesheet += """body.body_cover {
-	width: """+str(width)+"""px;
-	height: """+str(height)+"""px;
-	margin: 0;
-}
-div.image_cover > img {
-	position: absolute;
-	height: """+str(height)+"""px;
-	top: 0px;
-	left: 0px;
-	margin: 0;
-	z-index: 0;
-}
-"""
-        if len(settings["chapters"]) == 0:
-            navigation += """
-                    <li>
-                        <a href="cover.xhtml">Cover</a>
-                    </li>
-"""
-        manifestXHTML += f"""      <item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>
-      <item id="cover-image" properties="cover-image" href="images/{imgs[i]}" media-type="image/{mediatype}"/>
-"""
-        spine += """      <itemref idref="cover" linear="yes"/>
-"""
+        xhtml_code = f"<body class=\"body_cover\">\n    <div class=\"image_cover\">\n        <img src=\"images/{imgs[i]}\" alt=\"Cover)\"/>\n    </div>\n</body>"
+        stylesheet += f"body.body_cover {{\n	width: {str(width)}px;\n	height: {str(height)}px;\n	margin: 0;\n}}\ndiv.image_cover > img {{\n	position: absolute;\n	height: {str(height)}px;\n	top: 0px;\n	left: 0px;\n	margin: 0;\n	z-index: 0;\n}}\n"
+        if len(settings["chapters"]) == 0: navigation += "\n                <li>\n                    <a href=\"cover.xhtml\">Cover</a>\n                </li>\n"
+        manifestXHTML += f"      <item id=\"cover\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"cover-image\" properties=\"cover-image\" href=\"images/{imgs[i]}\" media-type=\"image/{mediatype}\"/>\n"
+        spine += "      <itemref idref=\"cover\" linear=\"yes\"/>\n"
         pagelist.append("Cover")
+    elif page_num < 1:
+        title = f"Before Page (Page {page_num}}})"
+        file_name = f"pg_{str(i)}.xhtml"
+        xhtml_code = f"<body class=\"body_{str(i)}\">\n    <div class=\"image_{str(i)}\">\n        <img src=\"images/{imgs[i]}\" width=\"{str(width)}\" height=\"{str(height)}\" alt=\"Before Page (Page {page_num}\" />\n    </div>\n</body>"
+        stylesheet += f"body.body_{str(i)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(i)} {{	position: absolute;	height: {str(height)}px;	top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
+        manifestXHTML += f"      <item id=\"xhtml_{str(i)}\" href=\"{file_name}\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"{imgs[i]}\" href=\"images/{imgs[i]}\" media-type=\"image/{mediatype}\"/>\n"
+        spine += f"      <itemref idref=\"xhtml_{str(i)}\" linear=\"yes\"/>\n"
+        pagelist.append(str(page_num))
     else:
         title = "Page "+str(page_num)
         file_name = f"pg_{str(i)}.xhtml"
-        xhtml_code = f"""<body class="body_{str(i)}">
-    <div class="image_{str(i)}">
-        <img src="images/{imgs[i]}" width="{str(width)}" height="{str(height)}" alt="{str(page_num)}" />
-    </div>
-</body>"""
-        f'<img src="images/{imgs[i]}" width="{str(width)}" height="{str(height)}" alt="{file_name}" />'
-        stylesheet += """body.body_"""+str(i)+""" {	width: """+str(width)+"""px; height: """+str(height)+"""px;	margin: 0; }
-img.image_"""+str(i)+""" {	position: absolute;	height: """+str(height)+"""px;	top: 0px; left: 0px; margin: 0;	z-index: 0; }
-
-"""
-        manifestXHTML += f"""      <item id="xhtml_{str(i)}" href="{file_name}" media-type="application/xhtml+xml"/>
-      <item id="{imgs[i]}" href="images/{imgs[i]}" media-type="image/{mediatype}"/>
-"""
-        spine += f"""      <itemref idref="xhtml_{str(i)}" linear="yes"/>
-"""
+        xhtml_code = f"<body class=\"body_{str(i)}\">\n    <div class=\"image_{str(i)}\">\n        <img src=\"images/{imgs[i]}\" width=\"{str(width)}\" height=\"{str(height)}\" alt=\"{str(page_num)}\" />\n    </div>\n</body>"
+        stylesheet += f"body.body_{str(i)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(i)} {{	position: absolute;	height: {str(height)}px;	top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
+        manifestXHTML += f"      <item id=\"xhtml_{str(i)}\" href=\"{file_name}\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"{imgs[i]}\" href=\"images/{imgs[i]}\" media-type=\"image/{mediatype}\"/>\n"
+        spine += f"      <itemref idref=\"xhtml_{str(i)}\" linear=\"yes\"/>\n"
         pagelist.append(str(page_num))
-    xhtml_code = f"""<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+    xhtml_code = f"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\n<head>\n<meta charset=\"UTF-8\"/>\n<meta name=\"viewport\" content=\"width={str(width)}, height={str(height)}\" />\n<title>{title}</title>\n<link href=\"stylesheet.css\" type=\"text/css\" rel=\"stylesheet\" />\n</head>\n{xhtml_code}\n</html>"
+    file_path = os.path.join(settings["epub_path"], settings["filename"], "OEBPS", file_name)
 
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width={str(width)}, height={str(height)}" />
-<title>{title}</title>
-<link href="stylesheet.css" type="text/css" rel="stylesheet" />
-</head>
-
-{xhtml_code}
-</html>"""
-
-    try:
-        file_path = os.path.join(settings["epub_path"], settings["filename"], "OEBPS", file_name)
-        with open(file_path, "a") as xhtml:
-            xhtml.write(xhtml_code)
-            print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\OEBPS\\{file_name} created!")
-    except OSError as error:
-        print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\OEBPS\\{file_name} can't be created. Reason: {error}")
-        quit()
+    create_file(file_path, xhtml_code)
 
 ## STYLESHEET.CSS
 
-try:
-    with open((os.path.join(settings['epub_path'], settings['filename'],"OEBPS","stylesheet.css")), "a") as css:
-        css.write(stylesheet)
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\OEBPS\\stylesheet.css created!")
-except OSError as error:
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\OEBPS\\stylesheet.css can't be created. Reason: {error}")
-    quit()
+create_file(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","stylesheet.css"), stylesheet)
 
 ## NAVIGATION DOCUMENT (NAV.XHTML)
-for i in range(len(settings["chapters"])):
-    navigation += f"""
-                <li>
-                    <a href="pg_{settings["chapters"][i]}.xhtml">Chapter {i+1}</a>
-                </li>
-"""
+for i in range(len(settings["chapters"])): navigation += f"\n            <li>\n                <a href=\"pg_{settings['chapters'][i]}.xhtml\">Chapter {i+1}</a>\n            </li>\n"
 
-navigation += """
-            </ol>
-        </nav>
-        <nav xmlns:epub="http://www.idpf.org/2007/ops" role="doc-pagelist" epub:type="page-list" id="page-list">
-            <ol>
-"""
+navigation += "\n        </ol>\n    </nav>\n    <nav xmlns:epub=\"http://www.idpf.org/2007/ops\" role=\"doc-pagelist\" epub:type=\"page-list\" id=\"page-list\">\n        <ol>\n"
 
 for i in range(len(pagelist)):
-    if i == 0:
-        navigation += f"""                <li><a href="cover.xhtml">{pagelist[i]}</a></li>
-"""
-    else:
-        navigation += f"""                <li><a href="pg_{i}.xhtml">{pagelist[i]}</a></li>
-"""
+    if i == 0: navigation += f"          <li><a href=\"cover.xhtml\">{pagelist[i]}</a></li>\n"
+    else: navigation += f"          <li><a href=\"pg_{i}.xhtml\">{pagelist[i]}</a></li>\n"
 
-navigation += """           </ol>
-        </nav>
-    </body>
-</html>"""
+navigation += "       </ol>\n    </nav>\n</body>\n</html>"
 
-try:
-    with open(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","nav.xhtml"), "a") as nav:
-        nav.write(navigation)
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\OEBPS\\nav.xhtml created!")
-except OSError as error:
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\OEBPS\\nav.xhtml can't be created. Reason: {error}")
-    quit()
+create_file(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","nav.xhtml"), navigation)
 
 ## CONTAINER
 
-try:
-    with open(os.path.join(settings["epub_path"], settings["filename"],"META-INF","container.xml"), "a") as container:
-        container.write("""<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-    <rootfiles>
-        <rootfile 
-            full-path="OEBPS/content.opf" 
-            media-type="application/oebps-package+xml"/>
-   </rootfiles>
-</container>
-""")
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\META-INF\\container.xml created!")
-except OSError as error:
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\META-INF\\container.xml can't be created. Reason: {error}")
-    quit()
-    
+create_file(os.path.join(settings["epub_path"], settings["filename"],"META-INF","container.xml"), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">\n    <rootfiles>\n        <rootfile \n            full-path=\"OEBPS/content.opf\" \n            media-type=\"application/oebps-package+xml\"/>\n   </rootfiles>\n</container>\n")
 
 ## APPLE COMPATABILITY
-try:
-    with open(os.path.join(settings["epub_path"], settings["filename"],"META-INF","com.apple.ibooks.display-options.xml"), "a") as apple:
-        apple.write("""<?xml version="1.0" encoding="UTF-8"?>
-<display_options>
-	<platform name="*">
-		<option name="fixed-layout">true</option>
-		<option name="open-to-spread">true</option>
-	</platform>
-</display_options>
-""")
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\META-INF\\container.xml created!")
-except OSError as error:
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\META-INF\\container.xml can't be created. Reason: {error}")
-    quit()
+
+create_file(os.path.join(settings["epub_path"], settings["filename"],"META-INF","com.apple.ibooks.display-options.xml"), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<display_options>\n	<platform name=\"*\">\n		<option name=\"fixed-layout\">true</option>\n		<option name=\"open-to-spread\">true</option>\n	</platform>\n</display_options>\n")
 
 ## TABLE OF CONTENTS/NCX (LEGACY)
 
 if settings["legacy"] == "y":
-    ncxLegacy = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd/">
-<ncx version="2005-1" xml:lang="en-US" xmlns="http://www.daisy.org/z3986/2005/ncx/">
-    <head>
-        <meta name="dtb:uid" content="{settings['identifier'].split(":")[1]}"/>
-        <meta name="dtb:depth" content="{1 + len(settings["chapters"])}"/>
-        <meta name="dtb:totalPageCount" content="0"/>
-        <meta name="dtb:maxPageNumber" content="0"/>
-    </head>
-    <docTitle>
-        <text>{settings['title']}</text>
-    </docTitle>
-    <navMap>
-        <navPoint id="cover" playOrder="1">
-            <navLabel>
-                <text>Cover</text>
-            </navLabel>
-            <content src="cover.xhtml"/>
-        </navPoint>
-"""
+    ncxLegacy = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE ncx PUBLIC \"-//NISO//DTD ncx 2005-1//EN\" \"http://www.daisy.org/z3986/2005/ncx-2005-1.dtd/\">\n<ncx version=\"2005-1\" xml:lang=\"en-US\" xmlns=\"http://www.daisy.org/z3986/2005/ncx/\">\n    <head>\n        <meta name=\"dtb:uid\" content=\"{settings['identifier'].split(':')[1]}\"/>\n        <meta name=\"dtb:depth\" content=\"{1 + len(settings['chapters'])}\"/>\n        <meta name=\"dtb:totalPageCount\" content=\"0\"/>\n        <meta name=\"dtb:maxPageNumber\" content=\"0\"/>\n    </head>\n    <docTitle>\n        <text>{settings['title']}</text>\n    </docTitle>\n    <navMap>\n        <navPoint id=\"cover\" playOrder=\"1\">\n            <navLabel>\n                <text>Cover</text>\n            </navLabel>\n            <content src=\"cover.xhtml\"/>\n        </navPoint>\n"
     for i in range(len(settings["chapters"])):
-        ncxLegacy += f"""       <navPoint id="chapter_{i}" playOrder="{str(i+2)}">
-            <navLabel>
-                <text>Chapter {str(i+1)}</text>
-            </navLabel>
-            <content src="pg_{settings["chapters"][i]}.xhtml"/>
-        </navPoint>
-    """
-    ncxLegacy += """    </navMap>
-    <pageList>
-        <navLabel>
-            <text>Pages</text>
-        </navLabel>
-"""
+        ncxLegacy += f"       <navPoint id=\"chapter_{i}\" playOrder=\"{str(i+2)}\">\n            <navLabel>\n                <text>Chapter {str(i+1)}</text>\n            </navLabel>\n            <content src=\"pg_{settings['chapters'][i]}.xhtml\"/>\n        </navPoint>\n    "
+    ncxLegacy += "    </navMap>\n    <pageList>\n        <navLabel>\n            <text>Pages</text>\n        </navLabel>\n"
 
     for i in range(len(pagelist)):
-        if i == 0:
-            ncxLegacy += f"""        <pageTarget type="normal" id="coverPage" value="{str(i)}" playOrder="{str(i+1)}">
-            <navLabel>
-                <text>Cover</text>
-            </navLabel>
-            <content src="cover.xhtml"/>
-        </pageTarget>
-"""
-        else:
-            ncxLegacy += f"""        <pageTarget type="normal" id="pg_{str(i)}" value="{str(i)}" playOrder="{str(i+1)}">
-            <navLabel>
-                <text>{str(i)}</text>
-            </navLabel>
-            <content src="pg_{str(i)}.xhtml"/>
-        </pageTarget>
-"""
-    ncxLegacy += """   </pageList>
-</ncx>"""
+        if i == 0: ncxLegacy += f"        <pageTarget type=\"normal\" id=\"coverPage\" value=\"{str(i)}\" playOrder=\"{str(i+1)}\">\n            <navLabel>\n                <text>Cover</text>\n            </navLabel>\n            <content src=\"cover.xhtml\"/>\n        </pageTarget>\n"
+        else: ncxLegacy += f"        <pageTarget type=\"normal\" id=\"pg_{str(i)}\" value=\"{str(i)}\" playOrder=\"{str(i+1)}\">\n            <navLabel>\n                <text>{str(i)}</text>\n            </navLabel>\n            <content src=\"pg_{str(i)}.xhtml\"/>\n        </pageTarget>\n"
+    ncxLegacy += "   </pageList>\n</ncx>"
 
-    try:
-        with open(os.path.join(settings['epub_path'], settings['filename'],"OEBPS","toc.ncx"), "a") as ncx:
-            ncx.write(ncxLegacy)
-        print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\OEBPS\\toc.ncx created!")
-    except OSError as error:
-        print (f"\nFile {settings[os.path.join(settings['epub_path'], settings['filename'])]}\\OEBPS\\toc.ncx can't be created. Reason: {error}")
-        quit()
+    create_file(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","toc.ncx"), ncxLegacy)
 
 ## PACKAGE DOCUMENT (CONTENT.OPF)
 
-package = f"""<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="pub-id" xml:lang="{settings["lang"]}" dir="{settings["dir"]}">
-    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-        <meta name="cover" content="cover-image" />
-        <dc:identifier id="pub-id">{settings["identifier"]}</dc:identifier>
-        <dc:language>{settings["lang"]}</dc:language>
-        <meta
-            property="dcterms:modified">
-            {settings['dateMod']}
-        </meta>
-        <dc:title id="title">{settings["title"]}</dc:title>
-        <meta property="rendition:layout">pre-paginated</meta>
-        <meta property="rendition:spread">both</meta>
-"""
+package = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"pub-id\" xml:lang=\"{settings['lang']}\" dir=\"{settings['dir']}\">\n    <metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n        <meta name=\"cover\" content=\"cover-image\" />\n        <dc:identifier id=\"pub-id\">{settings['identifier']}</dc:identifier>\n        <dc:language>{settings['lang']}</dc:language>\n        <meta property=\"dcterms:modified\">{settings['dateMod']}</meta>\n        <dc:title id=\"title\">{settings['title']}</dc:title>\n        <meta property=\"rendition:layout\">pre-paginated</meta>\n        <meta property=\"rendition:spread\">both</meta>\n"
 
 if settings["optionalMeta"] == "y":
-    if settings["titleSort"] != "":
-        package += f"""<meta
-            property="file-as"
-            refines="#title">
-            {settings["titleSort"]}
-            </meta>
-"""
+    if settings["titleSort"] != "": package += f"<meta property=\"file-as\" refines=\"#title\">{settings['titleSort']}</meta>\n"
         
     if len(settings["authors"]) > 0:
         for i in range(len(settings["authors"])):
-            authorPkg = f"""        <dc:creator 
-            id="creator_{str(i)}">
-            {settings["authors"][i]}
-        </dc:creator>
-        <meta
-            refines="#creator_{str(i)}"
-            property="file-as">
-            {settings["authorSort"][i]}
-        </meta>
-"""
-            if settings['authorAltScript'][i] != "":
-                authorPkg += f"""       <meta
-            refines="#creator_{str(i)}"
-            property="alternate-script"
-            xml:lang="{(settings["authorAltScript"][i]).split(",")[1]}">
-            {(settings["authorAltScript"][i]).split(",")[0]}
-        </meta>
-"""
+            authorPkg = f"        <dc:creator id=\"creator_{str(i)}\">{settings['authors'][i]}</dc:creator>\n        <meta refines=\"#creator_{str(i)}\" property=\"file-as\">{settings['authorSort'][i]}</meta>\n"
+            if settings['authorAltScript'][i] != "": authorPkg += f"       <meta refines=\"#creator_{str(i)}\" property=\"alternate-script\" xml:lang=\"{(settings['authorAltScript'][i]).split(',')[1]}\">{(settings['authorAltScript'][i]).split(',')[0]}</meta>\n"
             package += authorPkg
 
     if len(settings["contributors"]) > 0:
         for i in range(len(settings["contributors"])):
-            contributorPkg = f"""       <dc:contributor 
-            id="contributor_{str(i)}">
-            {settings["contributors"][i]}
-        </dc:contributor>
-        <meta
-            refines="#contributor_{str(i)}"
-            property="file-as">
-            {settings["contributorSort"][i]}
-        </meta>
-"""
-            if settings['contributorAltScript'][i] != "":
-                contributorPkg += f"""      <meta
-            refines="#contributor_{str(i)}"
-            property="alternate-script"
-            xml:lang="{(settings["contributorAltScript"][i]).split(",")[1]}">
-            {(settings["contributorAltScript"][i]).split(",")[0]}
-        </meta>
-"""
+            contributorPkg = f"       <dc:contributor id=\"contributor_{str(i)}\">{settings['contributors'][i]}</dc:contributor>\n        <meta refines=\"#contributor_{str(i)}\" property=\"file-as\">{settings['contributorSort'][i]}</meta>\n"
+            if settings['contributorAltScript'][i] != "": contributorPkg += f"      <meta refines=\"#contributor_{str(i)}\" property=\"alternate-script\" xml:lang=\"{(settings['contributorAltScript'][i]).split(',')[1]}\">{(settings['contributorAltScript'][i]).split(',')[0]}</meta>\n"
             package += contributorPkg
 
-    if settings["pubdate"] != "":
-        package += f"""     <dc:date>
-            {settings['pubdate']}
-        </dc:date>
-"""
-    if settings["publisher"] != "":
-        package += f"""     <dc:publisher>
-            {settings['publisher']}
-        </dc:publisher>
-"""
+    if settings["pubdate"] != "": package += f"     <dc:date>{settings['pubdate']}</dc:date>\n"
+    if settings["publisher"] != "": package += f"     <dc:publisher>{settings['publisher']}</dc:publisher>\n"
 
-    if settings["desc"] != "":
-        package += f"""     <dc:description>
-            {settings['desc']}
-        </dc:description>
-"""
+    if settings["desc"] != "": package += f"     <dc:description>\n{settings['desc']}\n</dc:description>\n"
     
-package += """  </metadata>
-    <manifest>
-"""
+package += "  </metadata>\n    <manifest>\n"
 
-if settings["legacy"] == "y":
-    package += """  <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>"""
+package += f"      <item id=\"toc\" properties=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"style\" href=\"stylesheet.css\" media-type=\"text/css\"/>\n{manifestXHTML}\n"
 
-package += """      <item id="toc" properties="nav" href="nav.xhtml" media-type="application/xhtml+xml"/>
-      <item id="style" href="stylesheet.css" media-type="text/css"/>
-""" + manifestXHTML + """   </manifest>
-"""
+if(settings["legacy"]) == "y": package += f"  <item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>\n  </manifest>\n  <spine toc=\"ncx\" page-progression-direction=\"{settings['dir']}\">\n"
+else: package += f"  </manifest>\n  <spine page-progression-direction=\"{settings['dir']}\">\n"
 
-if(settings["legacy"]) == "y":
-    package += f"""  <spine toc="ncx" page-progression-direction="{settings["dir"]}">
-"""
-else:
-    package += f"""  <spine page-progression-direction="{settings["dir"]}">
-"""
+package += spine + "  </spine>\n</package>"
 
-package += spine + """  </spine>
-</package>"""
-
-try:
-    with open(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","content.opf"), "a") as opf:
-        opf.write(package)
-    print (f"\nFile {os.path.join(settings['epub_path'], settings['filename'])}\\OEBPS\\content.opf created!")
-except OSError as error:
-    print (f"\nFile {settings['epub_path']}\\OEBPS\\content.opf can't be created! Reason: {error}")
-    quit()
+create_file(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","content.opf"), package)
 
 ### COMPILE TO EPUB
+endLoadPrint("\nFiles Created!\n")
 
-print("\nCreating ePub (This may take a while)...")
-
+startLoadPrint("Creating ePub")
 
 try:
-    with zipfile.ZipFile(settings["epub_path"]+"\\"+settings["filename"]+".zip", 'w') as zip:
-        zip.write(os.path.join(settings["epub_path"], settings["filename"], "mimetype"), "mimetype")
-        
+    with zipfile.ZipFile(settings["epub_path"]+"\\"+settings["filename"]+".epub", 'w') as epub:
+        epub.write(os.path.join(settings["epub_path"], settings["filename"], "mimetype"), "mimetype")
         for file in os.listdir(os.path.join(settings["epub_path"], settings["filename"], "META-INF")):
-            zip.write(os.path.join(settings["epub_path"], settings["filename"], "META-INF", file), "META-INF\\"+file)
-        
+            epub.write(os.path.join(settings["epub_path"], settings["filename"], "META-INF", file), "META-INF\\"+file)
         for file in os.listdir(os.path.join(settings["epub_path"], settings["filename"], "OEBPS")):
-            zip.write(os.path.join(settings["epub_path"], settings["filename"], "OEBPS", file), "OEBPS\\"+file)
-        
+            epub.write(os.path.join(settings["epub_path"], settings["filename"], "OEBPS", file), "OEBPS\\"+file)
         for file in os.listdir(os.path.join(settings["epub_path"], settings["filename"], "OEBPS", "images")):
-            zip.write(os.path.join(settings["epub_path"], settings["filename"], "OEBPS", "images", file), "OEBPS\\images\\"+file)
-    if debug != True:
-        shutil.rmtree(os.path.join(settings["epub_path"],settings["filename"]))
-    shutil.move(settings["epub_path"]+"\\"+settings["filename"]+".zip", settings["epub_path"]+"\\"+settings["filename"]+".epub")
-except OSError as error:
+            epub.write(os.path.join(settings["epub_path"], settings["filename"], "OEBPS", "images", file), "OEBPS\\images\\"+file)
+        if debug != True: shutil.rmtree(os.path.join(settings["epub_path"],settings["filename"]))
+except Exception as error:
     print (f"File {os.path.join(settings['epub_path'], settings['filename'])}.epub can't be created. Reason: {error}")
     quit()
 
-print(f"\nePub created at {settings['epub_path']}!\n")
+endLoadPrint(f"\nePub created at {settings['epub_path']}!")
 quit()
