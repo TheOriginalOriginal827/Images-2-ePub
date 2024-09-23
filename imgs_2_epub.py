@@ -8,6 +8,25 @@ from datetime import datetime
 import uuid
 import zipfile
 import threading
+        
+### PREP
+
+debug = False
+
+settings={}
+
+def roman(int):
+    m = ["", "m", "mm", "mmm"]
+    c = ["", "c", "cc", "ccc", "cd", "d", "dc", "dcc", "dccc", "cm"]
+    x = ["", "x", "xx", "xxx", "xl", "l", "lx", "lxx", "lxxx", "xc"]
+    i = ["", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix"]
+    
+    thous = m[int // 1000]
+    hunds = c[(int%1000)//100]
+    tens = x[(int%100)//10]
+    ones = i[int%10]
+    
+    return (thous+hunds+tens+ones)
 
 processDone = False
 loadmsg=""
@@ -38,12 +57,6 @@ def endLoadPrint(msg):
     donemsg = msg
     processDone = True
     time.sleep(0.2)
-        
-### PREP
-
-debug = False
-
-settings={}
 
 ## DEFINE PATHS
 
@@ -127,9 +140,10 @@ promptMeta("identifier", "\nPlease provide a unique identifier for your EPUB (Ex
 if settings["identifier"] == "": settings.update({"identifier": "uuid:"+ str(uuid.uuid4())})
 
 while True:
-    promptMeta("pageStart", "\nOn what image does your book start couting pages? (Ex: Image 2 = Page 1, Image 15 = Page 13): ", False, False, "\nInvalid page!")
+    promptMeta("pageStart", "\nWhat does your book consider 'Page 1'? (0 = Cover, 1 = 'Page 1', etc.): ", False, False, "\nInvalid page!")
     if settings["pageStart"].isdigit() == True: break
     else: print("\nInvalid Page!")
+settings.update({"pageStart": int(settings["pageStart"])-1})
 
 promptMeta("legacy", "\nWould you like to enable legacy compatability? (May be needed for old ePub readers) (y/n): ", ("y", "n"), False, "\nInvalid choice! Please type 'y' or 'n'.")
 
@@ -138,10 +152,9 @@ promptMeta("toc", "\nWould you like a table of contents? (y/n): ", ("y", "n"), F
 
 settings.update({"chapters": []})
 if settings["toc"] == "y":
-    print("\n")
     while True:
         while True:
-            chapter = input("What page does your (next) chapter start? (Leave blank to end): ")
+            chapter = input("\nWhat page does Chapter "+str(len(settings["chapters"])+1)+" start? (Leave blank to end): ")
             if debug == True: print("CHAPTER: "+chapter)
             if chapter != "":
                 if chapter.isdigit():
@@ -151,6 +164,20 @@ if settings["toc"] == "y":
             else: break
         break
     if debug == True: print("CHAPTERS: "+str(settings["chapters"]))
+
+    if len(settings["chapters"]) > 0: promptMeta("chapName", "\nWould you like to give your chapter custom names? (y/n): ", ("y", "n"), False, "\nInvalid choice! Please type 'y' or 'n'.")
+
+    settings.update({"chapterNames": []})
+    if settings["chapName"] == "y":
+        for i in range(len(settings["chapters"])):
+            name = input("\nPlease give a custom name to Chapter "+str(i+1)+" (Leave blank to skip): ")
+            if name != "":
+                settings["chapterNames"].append(name)
+            else:
+                settings["chapterNames"].append("Chapter "+str(i+1))
+    else:
+        for i in range(len(settings["chapters"])):
+            settings["chapterNames"].append("Chapter "+str(i+1))
 
 promptMeta("dir", "\nWhich way should your ePub be read? (Left-to-right for english and similar languages) (ltr/rtl): ", ("ltr", "rtl"), False, "Not a direction! Please type 'ltr' or 'rtl'")
 
@@ -288,13 +315,14 @@ spine = ""
 startLoadPrint("Creating files")
 
 for i in range(len(imgs)):
-    if imgs[i].endswith((".jpg", ".jpeg", ".jpe", ".jif", ".jfif", ".jfi")): mediatype = "jpeg"
-    elif imgs[i].endswith((".png")): mediatype = "png"
-    elif imgs[i].endswith((".gif")): mediatype = "gif"
-    elif imgs[i].endswith(("webp")): mediatype = "webp"
+    pageImg = Image.open(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","images",imgs[i]))
+    if pageImg.format == "JPEG": mediatype = "jpeg"
+    elif pageImg.format == "PNG": mediatype = "png"
+    elif pageImg.format == "GIF": mediatype = "gif"
+    elif pageImg.format == "WebP": mediatype = "webp"
     page_num = i
-    width, height = Image.open(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","images",imgs[i])).size
-    if settings["pageStart"] != 2: page_num -= int(settings["pageStart"])-1
+    width, height = pageImg.size
+    page_num -= int(settings["pageStart"])
     if i == 0:
         title = "Cover"
         file_name = "cover.xhtml"
@@ -303,26 +331,29 @@ for i in range(len(imgs)):
         if len(settings["chapters"]) == 0: navigation += "\n                <li>\n                    <a href=\"cover.xhtml\">Cover</a>\n                </li>\n"
         manifestXHTML += f"      <item id=\"cover\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"cover-image\" properties=\"cover-image\" href=\"images/{imgs[i]}\" media-type=\"image/{mediatype}\"/>\n"
         spine += "      <itemref idref=\"cover\" linear=\"yes\"/>\n"
-        pagelist.append("Cover")
+        if page_num < 1:
+            pagelist.append(roman(page_num+settings["pageStart"]+1))
+        else:
+            pagelist.append(str(page_num))
     elif page_num < 1:
-        title = f"Before Page (Page {page_num}}})"
-        file_name = f"pg_{str(i)}.xhtml"
-        xhtml_code = f"<body class=\"body_{str(i)}\">\n    <div class=\"image_{str(i)}\">\n        <img src=\"images/{imgs[i]}\" width=\"{str(width)}\" height=\"{str(height)}\" alt=\"Before Page (Page {page_num}\" />\n    </div>\n</body>"
-        stylesheet += f"body.body_{str(i)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(i)} {{	position: absolute;	height: {str(height)}px;	top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
+        title = f"Page {roman(page_num+settings['pageStart']+1)}"
+        file_name = f"pg_{roman(page_num+settings['pageStart']+1)}.xhtml"
+        xhtml_code = f"<body class=\"body_{roman(page_num+settings['pageStart']+1)}\">\n    <div class=\"image_{roman(page_num+settings['pageStart']+1)}\">\n        <img src=\"images/{imgs[i]}\" width=\"{str(width)}\" height=\"{str(height)}\" alt=\"Page {roman(page_num+settings['pageStart']+1)}\" />\n    </div>\n</body>"
+        stylesheet += f"body.body_{str(page_num)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(page_num)} {{	position: absolute;	height: {str(height)}px;	top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
         manifestXHTML += f"      <item id=\"xhtml_{str(i)}\" href=\"{file_name}\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"{imgs[i]}\" href=\"images/{imgs[i]}\" media-type=\"image/{mediatype}\"/>\n"
         spine += f"      <itemref idref=\"xhtml_{str(i)}\" linear=\"yes\"/>\n"
-        pagelist.append(str(page_num))
+        pagelist.append(roman(page_num+settings["pageStart"]+1))
     else:
         title = "Page "+str(page_num)
-        file_name = f"pg_{str(i)}.xhtml"
-        xhtml_code = f"<body class=\"body_{str(i)}\">\n    <div class=\"image_{str(i)}\">\n        <img src=\"images/{imgs[i]}\" width=\"{str(width)}\" height=\"{str(height)}\" alt=\"{str(page_num)}\" />\n    </div>\n</body>"
-        stylesheet += f"body.body_{str(i)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(i)} {{	position: absolute;	height: {str(height)}px;	top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
+        file_name = f"pg_{str(page_num)}.xhtml"
+        xhtml_code = f"<body class=\"body_{str(page_num)}\">\n    <div class=\"image_{str(page_num)}\">\n        <img src=\"images/{imgs[i]}\" width=\"{str(width)}\" height=\"{str(height)}\" alt=\"{str(page_num)}\" />\n    </div>\n</body>"
+        stylesheet += f"body.body_{str(page_num)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(page_num)} {{	position: absolute;	height: {str(height)}px;	top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
         manifestXHTML += f"      <item id=\"xhtml_{str(i)}\" href=\"{file_name}\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"{imgs[i]}\" href=\"images/{imgs[i]}\" media-type=\"image/{mediatype}\"/>\n"
         spine += f"      <itemref idref=\"xhtml_{str(i)}\" linear=\"yes\"/>\n"
         pagelist.append(str(page_num))
     xhtml_code = f"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\n<head>\n<meta charset=\"UTF-8\"/>\n<meta name=\"viewport\" content=\"width={str(width)}, height={str(height)}\" />\n<title>{title}</title>\n<link href=\"stylesheet.css\" type=\"text/css\" rel=\"stylesheet\" />\n</head>\n{xhtml_code}\n</html>"
     file_path = os.path.join(settings["epub_path"], settings["filename"], "OEBPS", file_name)
-
+    pageImg.close()
     create_file(file_path, xhtml_code)
 
 ## STYLESHEET.CSS
@@ -330,13 +361,13 @@ for i in range(len(imgs)):
 create_file(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","stylesheet.css"), stylesheet)
 
 ## NAVIGATION DOCUMENT (NAV.XHTML)
-for i in range(len(settings["chapters"])): navigation += f"\n            <li>\n                <a href=\"pg_{settings['chapters'][i]}.xhtml\">Chapter {i+1}</a>\n            </li>\n"
+for i in range(len(settings["chapters"])): navigation += f"\n            <li>\n                <a href=\"pg_{settings['chapters'][i]}.xhtml\">{settings['chapterNames'][i]}</a>\n            </li>\n"
 
 navigation += "\n        </ol>\n    </nav>\n    <nav xmlns:epub=\"http://www.idpf.org/2007/ops\" role=\"doc-pagelist\" epub:type=\"page-list\" id=\"page-list\">\n        <ol>\n"
 
 for i in range(len(pagelist)):
-    if i == 0: navigation += f"          <li><a href=\"cover.xhtml\">{pagelist[i]}</a></li>\n"
-    else: navigation += f"          <li><a href=\"pg_{i}.xhtml\">{pagelist[i]}</a></li>\n"
+    if i == 0: navigation += f"          <li><a href=\"cover.xhtml\">{pagelist[i]} of {(len(pagelist)-settings['pageStart'])-1}</a></li>\n"
+    else: navigation += f"          <li><a href=\"pg_{pagelist[i]}.xhtml\">{pagelist[i]} of {(len(pagelist)-settings['pageStart'])-1}</a></li>\n"
 
 navigation += "       </ol>\n    </nav>\n</body>\n</html>"
 
@@ -353,14 +384,21 @@ create_file(os.path.join(settings["epub_path"], settings["filename"],"META-INF",
 ## TABLE OF CONTENTS/NCX (LEGACY)
 
 if settings["legacy"] == "y":
-    ncxLegacy = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE ncx PUBLIC \"-//NISO//DTD ncx 2005-1//EN\" \"http://www.daisy.org/z3986/2005/ncx-2005-1.dtd/\">\n<ncx version=\"2005-1\" xml:lang=\"en-US\" xmlns=\"http://www.daisy.org/z3986/2005/ncx/\">\n    <head>\n        <meta name=\"dtb:uid\" content=\"{settings['identifier'].split(':')[1]}\"/>\n        <meta name=\"dtb:depth\" content=\"{1 + len(settings['chapters'])}\"/>\n        <meta name=\"dtb:totalPageCount\" content=\"0\"/>\n        <meta name=\"dtb:maxPageNumber\" content=\"0\"/>\n    </head>\n    <docTitle>\n        <text>{settings['title']}</text>\n    </docTitle>\n    <navMap>\n        <navPoint id=\"cover\" playOrder=\"1\">\n            <navLabel>\n                <text>Cover</text>\n            </navLabel>\n            <content src=\"cover.xhtml\"/>\n        </navPoint>\n"
-    for i in range(len(settings["chapters"])):
-        ncxLegacy += f"       <navPoint id=\"chapter_{i}\" playOrder=\"{str(i+2)}\">\n            <navLabel>\n                <text>Chapter {str(i+1)}</text>\n            </navLabel>\n            <content src=\"pg_{settings['chapters'][i]}.xhtml\"/>\n        </navPoint>\n    "
+    ncxLegacy = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ncx version=\"2005-1\" xml:lang=\"en-US\" xmlns=\"http://www.daisy.org/z3986/2005/ncx/\">\n    <head>\n        <meta name=\"dtb:uid\" content=\"{settings['identifier']}\"/>\n        <meta name=\"dtb:depth\" content=\"{len(pagelist)-settings['pageStart']}\"/>\n        <meta name=\"dtb:totalPageCount\" content=\"{len(pagelist)-settings['pageStart']}\"/>\n        <meta name=\"dtb:maxPageNumber\" content=\"{len(pagelist)-settings['pageStart']}\"/>\n    </head>\n    <docTitle>\n        <text>{settings['title']}</text>\n    </docTitle>\n    <navMap>\n"
+    if len(settings["chapters"]) == 0:
+        ncxLegacy += "        <navPoint id=\"cover\" playOrder=\"1\">\n            <navLabel>\n                <text>Cover</text>\n            </navLabel>\n            <content src=\"cover.xhtml\"/>\n        </navPoint>\n"
+    else:
+        for i in range(len(pagelist)):
+            for j in range(len(settings["chapters"])):
+                if pagelist[i] == settings["chapters"][j]:
+                    ncxLegacy += f"        <navPoint id=\"chapter_{j+1}\" playOrder=\"{i-int(settings['pageStart'])}\">\n            <navLabel>\n                <text>{settings['chapterNames'][j]}</text>\n            </navLabel>\n            <content src=\"pg_{pagelist[i]}.xhtml\"/>\n        </navPoint>\n"
     ncxLegacy += "    </navMap>\n    <pageList>\n        <navLabel>\n            <text>Pages</text>\n        </navLabel>\n"
 
+    if len(settings["chapters"]) != 0:
+        ncxLegacy += "        <pageTarget type=\"normal\" id=\"cover_page\" value=\"0\" playOrder=\"1\">\n            <navLabel>\n                <text>Cover</text>\n            </navLabel>\n            <content src=\"cover.xhtml\"/>\n        </pageTarget>\n"
     for i in range(len(pagelist)):
-        if i == 0: ncxLegacy += f"        <pageTarget type=\"normal\" id=\"coverPage\" value=\"{str(i)}\" playOrder=\"{str(i+1)}\">\n            <navLabel>\n                <text>Cover</text>\n            </navLabel>\n            <content src=\"cover.xhtml\"/>\n        </pageTarget>\n"
-        else: ncxLegacy += f"        <pageTarget type=\"normal\" id=\"pg_{str(i)}\" value=\"{str(i)}\" playOrder=\"{str(i+1)}\">\n            <navLabel>\n                <text>{str(i)}</text>\n            </navLabel>\n            <content src=\"pg_{str(i)}.xhtml\"/>\n        </pageTarget>\n"
+        if pagelist[i] not in settings["chapters"] and i != 0: 
+            ncxLegacy += f"        <pageTarget type=\"normal\" id=\"pg_{pagelist[i]}\" value=\"{i+1}\" playOrder=\"{i+1}\">\n            <navLabel>\n                <text>{pagelist[i]} of {(len(pagelist)-settings['pageStart'])-1}</text>\n            </navLabel>\n            <content src=\"pg_{pagelist[i]}.xhtml\"/>\n        </pageTarget>\n"
     ncxLegacy += "   </pageList>\n</ncx>"
 
     create_file(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","toc.ncx"), ncxLegacy)
