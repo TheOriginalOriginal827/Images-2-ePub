@@ -11,7 +11,7 @@ import threading
         
 ### PREP
 
-debug = False
+debug = True
 
 settings={}
 
@@ -158,7 +158,10 @@ if settings["toc"] == "y":
             if debug == True: print("CHAPTER: "+chapter)
             if chapter != "":
                 if chapter.isdigit():
-                    settings["chapters"].append(chapter)
+                    if chapter == "0":
+                        settings["chapters"].append("cover")
+                    else:
+                        settings["chapters"].append("pg_"+chapter)
                 else: 
                     print("\nNot a page!")
             else: break
@@ -361,7 +364,7 @@ for i in range(len(imgs)):
 create_file(os.path.join(settings["epub_path"], settings["filename"],"OEBPS","stylesheet.css"), stylesheet)
 
 ## NAVIGATION DOCUMENT (NAV.XHTML)
-for i in range(len(settings["chapters"])): navigation += f"\n            <li>\n                <a href=\"pg_{settings['chapters'][i]}.xhtml\">{settings['chapterNames'][i]}</a>\n            </li>\n"
+for i in range(len(settings["chapters"])): navigation += f"\n            <li>\n                <a href=\"{settings['chapters'][i]}.xhtml\">{settings['chapterNames'][i]}</a>\n            </li>\n"
 
 navigation += "\n        </ol>\n    </nav>\n    <nav xmlns:epub=\"http://www.idpf.org/2007/ops\" role=\"doc-pagelist\" epub:type=\"page-list\" id=\"page-list\">\n        <ol>\n"
 
