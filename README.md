@@ -3,6 +3,7 @@ A converter to take a collection of images and convert them to the ePub file for
 <br/><br/>
 ### Requirements
   Python (most newer versions will likely work)
+  <br/>
   Pillow (most newer versions will likely work)
 <br/><br/>
 ### IMAGES MUST BE IN CORRECT FORMAT!
