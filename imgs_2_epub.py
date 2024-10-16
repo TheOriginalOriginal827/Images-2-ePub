@@ -11,7 +11,7 @@ import threading
         
 ### PREP
 
-debug = True
+debug = False
 
 settings={}
 
@@ -147,10 +147,11 @@ settings.update({"pageStart": int(settings["pageStart"])-1})
 
 promptMeta("legacy", "\nWould you like to enable legacy compatability? (May be needed for old ePub readers) (y/n): ", ("y", "n"), False, "\nInvalid choice! Please type 'y' or 'n'.")
 
-
 promptMeta("toc", "\nWould you like a table of contents? (y/n): ", ("y", "n"), False, "\nInvalid choice! Please type 'y' or 'n'.")
 
 settings.update({"chapters": []})
+settings.update({"chapName": []})
+
 if settings["toc"] == "y":
     while True:
         while True:
@@ -310,7 +311,7 @@ endLoadPrint("\nImages Copied!\n")
 
 ## XHTML FILES + DYNAMIC CODE FOR OTHERS
 
-stylesheet = "body {background-color: #fff;}\n\n"
+stylesheet = "html, body {\n    height:100%;\n  overflow:hidden;\n  background-color: #fff;\n}\nimg {\n max-width:100%;\n   max-height:100%;\n}\n\n"
 navigation = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n<head>\n    <title>{settings['title']}</title>\n    <link rel=\"stylesheet\" href=\"stylesheet.css\" type=\"text/css\"/>\n    <meta charset=\"utf-8\"/>\n</head>\n<body>\n    <nav xmlns:epub=\"http://www.idpf.org/2007/ops\" role=\"doc-toc\" epub:type=\"toc\" id=\"toc\">\n        <ol>"
 pagelist = []
 manifestXHTML = ""
@@ -330,7 +331,7 @@ for i in range(len(imgs)):
         title = "Cover"
         file_name = "cover.xhtml"
         xhtml_code = f"<body class=\"body_cover\">\n    <div class=\"image_cover\">\n        <img src=\"images/{imgs[i]}\" alt=\"Cover)\"/>\n    </div>\n</body>"
-        stylesheet += f"body.body_cover {{\n	width: {str(width)}px;\n	height: {str(height)}px;\n	margin: 0;\n}}\ndiv.image_cover > img {{\n	position: absolute;\n	height: {str(height)}px;\n	top: 0px;\n	left: 0px;\n	margin: 0;\n	z-index: 0;\n}}\n"
+        stylesheet += f"body.body_cover {{\n	width: {str(width)}px;\n	height: {str(height)}px;\n	margin: 0;\n}}\ndiv.image_cover > img {{\n	position: absolute;\n   top: 0px;\n	left: 0px;\n	margin: 0;\n	z-index: 0;\n}}\n"
         if len(settings["chapters"]) == 0: navigation += "\n                <li>\n                    <a href=\"cover.xhtml\">Cover</a>\n                </li>\n"
         manifestXHTML += f"      <item id=\"cover\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"cover-image\" properties=\"cover-image\" href=\"images/{imgs[i]}\" media-type=\"image/{mediatype}\"/>\n"
         spine += "      <itemref idref=\"cover\" linear=\"yes\"/>\n"
@@ -342,7 +343,7 @@ for i in range(len(imgs)):
         title = f"Page {roman(page_num+settings['pageStart']+1)}"
         file_name = f"pg_{roman(page_num+settings['pageStart']+1)}.xhtml"
         xhtml_code = f"<body class=\"body_{roman(page_num+settings['pageStart']+1)}\">\n    <div class=\"image_{roman(page_num+settings['pageStart']+1)}\">\n        <img src=\"images/{imgs[i]}\" width=\"{str(width)}\" height=\"{str(height)}\" alt=\"Page {roman(page_num+settings['pageStart']+1)}\" />\n    </div>\n</body>"
-        stylesheet += f"body.body_{str(page_num)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(page_num)} {{	position: absolute;	height: {str(height)}px;	top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
+        stylesheet += f"body.body_{str(page_num)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(page_num)} {{	position: absolute; top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
         manifestXHTML += f"      <item id=\"xhtml_{str(i)}\" href=\"{file_name}\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"{imgs[i]}\" href=\"images/{imgs[i]}\" media-type=\"image/{mediatype}\"/>\n"
         spine += f"      <itemref idref=\"xhtml_{str(i)}\" linear=\"yes\"/>\n"
         pagelist.append(roman(page_num+settings["pageStart"]+1))
@@ -350,11 +351,11 @@ for i in range(len(imgs)):
         title = "Page "+str(page_num)
         file_name = f"pg_{str(page_num)}.xhtml"
         xhtml_code = f"<body class=\"body_{str(page_num)}\">\n    <div class=\"image_{str(page_num)}\">\n        <img src=\"images/{imgs[i]}\" width=\"{str(width)}\" height=\"{str(height)}\" alt=\"{str(page_num)}\" />\n    </div>\n</body>"
-        stylesheet += f"body.body_{str(page_num)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(page_num)} {{	position: absolute;	height: {str(height)}px;	top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
+        stylesheet += f"body.body_{str(page_num)} {{	width: {str(width)}px; height: {str(height)}px;	margin: 0; }}\nimg.image_{str(page_num)} {{	position: absolute; top: 0px; left: 0px; margin: 0;	z-index: 0; }}\n\n"
         manifestXHTML += f"      <item id=\"xhtml_{str(i)}\" href=\"{file_name}\" media-type=\"application/xhtml+xml\"/>\n      <item id=\"{imgs[i]}\" href=\"images/{imgs[i]}\" media-type=\"image/{mediatype}\"/>\n"
         spine += f"      <itemref idref=\"xhtml_{str(i)}\" linear=\"yes\"/>\n"
         pagelist.append(str(page_num))
-    xhtml_code = f"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\n<head>\n<meta charset=\"UTF-8\"/>\n<meta name=\"viewport\" content=\"width={str(width)}, height={str(height)}\" />\n<title>{title}</title>\n<link href=\"stylesheet.css\" type=\"text/css\" rel=\"stylesheet\" />\n</head>\n{xhtml_code}\n</html>"
+    xhtml_code = f"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n\n<head>\n    <meta charset=\"UTF-8\"/>\n <meta name=\"viewport\" content=\"width={str(width)}, height={str(height)}\" />\n   <title>{title}</title>\n    <link href=\"stylesheet.css\" type=\"text/css\" rel=\"stylesheet\" />\n</head>\n{xhtml_code}\n</html>"
     file_path = os.path.join(settings["epub_path"], settings["filename"], "OEBPS", file_name)
     pageImg.close()
     create_file(file_path, xhtml_code)
